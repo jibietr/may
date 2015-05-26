@@ -1,0 +1,57 @@
+library(readr)
+library(tm)
+library(SnowballC)
+library(Metrics) 
+library(Matrix)
+#library(gdata);
+#library(ggplot2);
+library(caret)
+#library(sampling)
+## Using cleaned train and test files provided by Oreo on kaggle forum 
+# https://www.kaggle.com/c/crowdflower-search-relevance/forums/t/14159/beating-the-benchmark-yet-again/79440#post79440
+
+
+train = read.csv("R/train.csv")
+
+## function to compute matching words
+matching_words_v1 = function(terms){
+  
+  term1 = terms[1]
+  term2 = terms[2]
+  corpus = Corpus(VectorSource(list(term1, term2))) ## Create corpus of 2 documents
+  corpus <- tm_map(corpus, content_transformer(tolower))
+  corpus = tm_map(corpus, removePunctuation)
+  corpus = tm_map(corpus, removeWords, stopwords("english"))
+  corpus = tm_map(corpus, stemDocument)
+  frequencies = DocumentTermMatrix(corpus)
+  tf_matrix = as.matrix(frequencies)
+  similarity = 1+sum(tf_matrix[1,]>0 & tf_matrix[2,]>0) # number of words present in query which are also present in response
+  
+  return(similarity)
+}
+
+
+train$id<-NULL
+train$product_description<-NULL
+train$relevance_variance<-NULL
+
+train$similarity = apply(train[,c("query","product_title")],1,matching_words_v1) ## find number of matching words between query and product title
+
+
+
+# sample data to reduce latency
+
+
+set.seed(998)
+
+
+train$median_relevance<-as.factor(train$median_relevance)
+inTraining <- createDataPartition(train$median_relevance , p = .50, list = FALSE)
+training <- train[ inTraining,]
+testing  <- train[-inTraining,]
+
+
+
+fitControl <- trainControl(method = "repeatedcv", number = 2, repeats = 5, metric = "Kappa")
+
+J48fit <- train(median_relevance ~ ., data = training, method = "J48", trControl = fitControl)               
